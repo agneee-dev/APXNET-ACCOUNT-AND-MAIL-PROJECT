@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: acct-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-apxnet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-apxnet_strong_pw_123}
+      POSTGRES_DB: ${POSTGRES_DB:-apxnet_accounts}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [apxnet]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-apxnet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./account-backend
+    container_name: acct-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-apxnet}:${POSTGRES_PASSWORD:-apxnet_strong_pw_123}@db:5432/${POSTGRES_DB:-apxnet_accounts}
+    ports:
+      - "${BACKEND_PORT:-5101}:5101"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [apxnet]
+
+  # NOTE: `npm run dev` on purpose (no `npm run build`) so UI edits reflect instantly.
+  user:
+    build: ./account-user
+    container_name: acct-user
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://192.168.0.127:5101}
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "${USER_PORT:-3102}:3102"
+    volumes:
+      - ./account-user/app:/app/app
+      - ./account-user/lib:/app/lib
+      - ./account-user/next.config.js:/app/next.config.js
+      - user_next:/app/.next
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks: [apxnet]
+
+  admin:
+    build: ./account-admin
+    container_name: acct-admin
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://192.168.0.127:5101}
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "${ADMIN_PORT:-3103}:3103"
+    volumes:
+      - ./account-admin/app:/app/app
+      - ./account-admin/lib:/app/lib
+      - ./account-admin/next.config.js:/app/next.config.js
+      - admin_next:/app/.next
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks: [apxnet]
+
+networks:
+  apxnet:
+    driver: bridge
+
+volumes:
+  pgdata:
+  user_next:
+  admin_next:
+
